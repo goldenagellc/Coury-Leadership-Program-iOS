@@ -7,59 +7,111 @@
 //
 
 import UIKit
+import CoreMotion
+import Firebase
+import GoogleSignIn
 
-class ProfileViewController: UIViewController {
-
+class ProfileViewController: UIViewController, HeaderViewDelegate {
+    @IBOutlet weak var headerView: HeaderView!
+    @IBOutlet weak var answeredPollsCount: UILabel!
+    @IBOutlet weak var currentGoalsCount: UILabel!
+    @IBOutlet weak var tableView: UITableView!
     @IBOutlet weak var collectionView: UICollectionView!
-    @IBOutlet weak var nameLabel: UILabel!
-    @IBOutlet weak var collectionSizeLabel: UILabel!
+    @IBOutlet weak var visualEffectHeader: UIVisualEffectView!
+    @IBOutlet weak var segmentedControl: UISegmentedControl!
+    
+    let collectionViewColumnCount: CGFloat = 3
+    internal var lastUpdated: Date = Date()
+    internal var selectedSegment: Int = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
+        headerView.leftButton.setTitle("About", for: .normal)
+        headerView.leftButton.setTitle("About", for: .highlighted)
+        headerView.leftButton.setTitle("About", for: .selected)
+        headerView.rightButton.setTitle("Logout", for: .normal)
+        headerView.rightButton.setTitle("Logout", for: .highlighted)
+        headerView.rightButton.setTitle("Logout", for: .selected)
+        headerView.delegate = self
+        
         engageCollectionView()
+        hideTableView(true)
+        engageTableView()
 
-        nameLabel.adjustsFontSizeToFitWidth = true
+        updateUserSpecificText()
     }
 
-    @IBAction func onSettingsClick(_ sender: Any) {
-        //TODO
-        print("Settings button was clicked!")
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        CLPProfile.shared.onFetchSuccess {
+            self.updateUserSpecificText()
+            self.updateCollectionView()
+            self.updateTableView()
+        }
+        
+        if [CLPProfile.shared.basicInformation.lastModified,
+            CLPProfile.shared.savedContent.lastModified,
+            CLPProfile.shared.goals.lastModified].max()! > lastUpdated {
+            updateUserSpecificText()
+            updateCollectionView()
+            updateTableView()
+        }
     }
 
+    func updateUserSpecificText() {
+        headerView.title.text = BasicInformation.name
+        answeredPollsCount.text = String(Feed.shared.polls.polls.answered.count)
+        currentGoalsCount.text = String(CLPProfile.shared.goals.goals.unachieved.count)
+//        segmentedControl.setTitle("Liked Posts - \(Feed.shared.posts.posts.liked.count)", forSegmentAt: 2)
+        
+        lastUpdated = Date()
+    }
+    
+    @IBAction func onViewSwitch(_ sender: UISegmentedControl) {
+        if sender.selectedSegmentIndex == 2 {
+            hideCollectionView(true)
+            hideTableView(false)
+        }else {
+            hideCollectionView(false)
+            hideTableView(true)
+            selectedSegment = sender.selectedSegmentIndex
+            updateCollectionView()
+        }
+    }
+    
+    func onLeftButtonTap() {
+        performSegue(withIdentifier: "AboutSegue", sender: self)
+    }
+    
+    func onRightButtonTap() {
+        AppDelegate.signOut()
+    }
 }
 
-extension ProfileViewController: UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout {
+extension ProfileViewController {
+    @IBAction func onLongPress(_ sender: UILongPressGestureRecognizer) {}
 
-    /*cell spacing x*/func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumInteritemSpacingForSectionAt section: Int) -> CGFloat {return 20}
-    /*cell spacing y*/func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat {return 20}
-    //cell size
-    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-        let interitemSpacing = self.collectionView(collectionView, layout: collectionViewLayout, minimumInteritemSpacingForSectionAt: indexPath.section)
-        let cellEdgeLength = (collectionView.bounds.width - interitemSpacing)/2.0
-        return CGSize(width: cellEdgeLength, height: cellEdgeLength)
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        super.prepare(for: segue, sender: sender)
+        if segue.identifier == "AboutSegue" {return}
+
+        let toVC = segue.destination
+        
+        switch segue.identifier {
+        case "ValueDetailSegue":
+            guard let cell = sender as? ValueCell else {return}
+            (toVC as! ValueDetailViewController).value = cell.value
+
+        case "StrengthDetailSegue":
+            guard let cell = sender as? StrengthCell else {return}
+            (toVC as! StrengthDetailViewController).strength = cell.strength
+
+        default: break
+        }
     }
 
-    /*number of sections*/func numberOfSections(in collectionView: UICollectionView) -> Int {return 1}
-    /*number of rows    */func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {return strengths.count}
-
-    //cell generation
-    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "StrengthCell", for: indexPath) as! StrengthCell
-        cell.strengthName.text = strengths[indexPath.row].name
-        cell.image.image = strengths[indexPath.row].image
-        return cell
-    }
-
-    //MARK: - convenience functions
-    func engageCollectionView() {
-        collectionView.delegate = self
-        collectionView.dataSource = self
-        collectionView.register(UINib(nibName: "StrengthCell", bundle: nil), forCellWithReuseIdentifier: "StrengthCell")
-
-        collectionView.contentInsetAdjustmentBehavior = .never
-        collectionView.contentInset = UIEdgeInsets(top: 20.0, left: 0.0, bottom: 20.0, right: 0.0)
-
-        collectionView.reloadData()
-    }
+    @IBAction func unwindToProfile(_ unwindSegue: UIStoryboardSegue) {}
 }
+

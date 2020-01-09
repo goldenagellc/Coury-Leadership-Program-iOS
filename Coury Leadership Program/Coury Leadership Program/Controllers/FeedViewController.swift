@@ -7,89 +7,71 @@
 //
 
 import UIKit
+import Firebase
+import GoogleSignIn
 
 class FeedViewController: UIViewController {
-    
+
+    @IBOutlet weak var headerView: HeaderView!
     @IBOutlet weak var tableView: UITableView!
+    
+    private var hasProfile: Bool = false
+    private var hasFeed: Bool = false
+    internal var lastUpdated: Date = Date()
+    
+    // Use these rather than Feed.shared.polls.polls.unanswered
+    // Prevents TableView from getting confused about indices when a poll gets answered
+    internal var pollsThisSession: [Polls.Poll] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
+        headerView.leftButton.isHidden = true
+        headerView.rightButton.isHidden = true
+        headerView.leftButton.isEnabled = false
+        headerView.rightButton.isEnabled = false
+        headerView.title.text = "Coury Leadership Program"
         engageTableView()
     }
 
-
-}
-
-
-extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
-
-    // Header height
-    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {return 0}
-    // Cell height
-    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        switch indexPath.section {
-        case 0: return CalendarCell.HEIGHT
-        case 1: return PollCell.HEIGHT
-        case 2:
-            let content = exampleFeed.content[indexPath.row]
-            if let _ = content as? Link {return LinkCell.HEIGHT}
-            else if let _ = content as? Image {return ImageCell.HEIGHT}
-            else if let _ = content as? Quote {return QuoteCell.HEIGHT}
-            else {return 30}
-
-        default: return 30
-        }
-    }
-    // Footer height
-    func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {return 0}
-
-    // Number of sections
-    func numberOfSections(in tableView: UITableView) -> Int {return 3}
-    // Number of rows
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch (section) {
-        case 0: return 1
-        case 1: return exampleFeed.polls.count
-        case 2: return exampleFeed.content.count
-        default: return 0
-        }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        tableView.contentInset = UIEdgeInsets(top: self.view.safeAreaInsets.top + self.headerView.frame.height + 12.0, left: 0.0, bottom: 12.0, right: 0.0)
+        tableView.scrollIndicatorInsets = UIEdgeInsets(top: self.headerView.frame.height, left: 0.0, bottom: 0.0, right: 0.0)
     }
 
-    // Cell generation
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        switch (indexPath.section) {
-        case 0: return exampleFeed.calendar.generateCellFor(tableView, at: indexPath)
-        case 1: return exampleFeed.polls[indexPath.row].generateCellFor(tableView, at: indexPath)
-        case 2: return exampleFeed.content[indexPath.row].generateCellFor(tableView, at: indexPath)
-
-        default: fatalError("Feed's TableView has more sections than expected.")
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        if (BasicInformation.uid == nil) && !CLPProfile.shared.isSigningIn {
+            // stop fetching CLPProfile so that user's selections don't get overwritten by empty database documents
+            CLPProfile.shared.stopFetching()
+            presentSignInVC()
+        }
+        
+        CLPProfile.shared.onFetchSuccess {
+            print("FeedViewController received CLPProfile callback")
+            self.hasProfile = true
+            self.possiblyUpdate()
+        }
+        Feed.shared.onFetchSuccess {
+            print("FeedViewController received Feed callback")
+            self.hasFeed = true
+            self.possiblyUpdate()
+        }
+        
+        if Feed.shared.posts.lastModified > lastUpdated {
+            possiblyUpdate()
+        }
+    }
+    
+    func possiblyUpdate() {
+        if hasProfile && hasFeed {
+            self.pollsThisSession = Feed.shared.polls.polls.unanswered
+            updateTableView()
         }
     }
 
-    // Cell selection
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        guard let cell = self.tableView.cellForRow(at: indexPath) as? FeedableCell else {return}
-        cell.onTap()
-    }
-
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        //TODO: reset tapCount on all cells
-    }
-
-    //MARK: - convenience functions
-    func engageTableView() {
-        tableView.delegate = self
-        tableView.dataSource = self
-
-        CalendarCell.registerWith(tableView)
-        LinkCell.registerWith(tableView)
-        ImageCell.registerWith(tableView)
-        QuoteCell.registerWith(tableView)
-
-        tableView.contentInsetAdjustmentBehavior = .never
-        tableView.contentInset = UIEdgeInsets(top: 20.0, left: 0.0, bottom: 20.0, right: 0.0)
-
-        tableView.reloadData()
-    }
+    @IBAction func unwindToFeed(_ unwindSegue: UIStoryboardSegue) {}
+    func presentSignInVC() {self.performSegue(withIdentifier: "SignInSegue", sender: self)}
 }
